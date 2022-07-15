@@ -1,0 +1,1137 @@
+---
+title: "Kaggle_Attempt2"
+author: "Woon Kim"
+date: "11/14/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = 'C:/Users/dneki/Desktop/Columbia/Applied Analytics/APAN 5200 Frameworks & Methods/kaggle/Submission2')
+```
+
+```{r, echo=FALSE}
+library(dplyr)
+library(ISLR2)
+library(rpart)
+library(rpart.plot)
+library(skimr)
+library(ggplot2)
+library(tidyr)
+library(data.table)
+library(GGally)
+library(ggcorrplot)
+library(mltools)
+library(Matrix)
+library(glmnet)
+library(mltools)
+library(caret)
+library(leaps)
+library(lubridate)
+library(DT)
+library(forcats)
+library(summarytools)
+library(e1071)
+library(Hmisc)
+library(ComplexHeatmap)
+library(circlize)
+library(mice)
+library(Lahman)
+library(printr)
+library(readr)
+library(xgboost)
+library(gbm)
+library(vtreat)
+library(car)
+
+source('data_manipulation_functions.R')
+```
+
+```{r}
+data = read.csv('analysisData.csv')
+scoringData = read.csv('scoringData.csv')
+#dim(data)
+#hist(data$price)
+```
+
+
+
+
+```{r}
+# dim(data)
+# colnames(data)
+# range(data$price)
+# str(data)
+# head(data)
+# summary(data)
+# skim(data)
+# 
+# hist(data$price)
+
+# ggplot(data=data,aes(x='',y=price))+
+#   geom_boxplot(outlier.color='red',outlier.alpha=0.5, fill='cadetblue')+
+#   geom_text(aes(x='',y=median(data$price),label=median(data$price)),size=3,hjust=11)+
+#   xlab(label = '')
+
+```
+
+
+
+# Missing Variable
+```{r}
+#skim(combinedData)
+
+#deal with outliers
+#plot
+# data = data %>% mutate(type1 = "analysis")
+# scoringData = scoringData %>% mutate(type1 = "scoring")
+# data = bind_rows(data, scoringData)
+
+sum(data=="", na.rm=TRUE)
+sum(data=="N/A", na.rm=TRUE)
+sum(data=="NA", na.rm=TRUE)
+
+data <- data %>%
+  mutate_if(is.character, char2na) %>%
+  mutate_if(is.factor, char2na)
+
+
+#remove columns with too many missing variables
+data2 = data %>% mutate_all(remove_cols_missing)
+data = data2
+#if missing values is less than 5000 keep, remove if greater data
+#data = data %>% mutate_all(remove_missing_rows)
+
+
+# data = data[!is.na(data$reviews_per_month),]
+# data = data[!is.na(data$interaction),]
+# data = data[!is.na(data$host_listings_count),]
+# data = data[!is.na(data$host_total_listings_count),]
+# 
+# data = data[!is.na(data$market),]
+# data = data[!is.na(data$zipcode),]
+# data = data[!is.na(data$city),]
+# data = data[!is.na(data$neighbourhood),]
+
+
+#if factor and NA then remove rows
+data = data[complete.cases(data[ , 
+c('last_review', 
+'first_review',
+'zipcode',
+'city',
+'neighbourhood',
+'host_identity_verified',
+'host_is_superhost',
+'host_location',
+'host_since')]),]
+
+#impute median values for numeric and NA
+data$beds[is.na(data$beds)] <- median(data$beds, na.rm=TRUE)
+data$cleaning_fee[is.na(data$cleaning_fee)] <- median(data$cleaning_fee, na.rm=TRUE)
+
+skim(data)
+
+
+dim(data)
+
+```
+
+
+# Data Transformation
+```{r}
+data = data %>% mutate_all(to_logical_from_factor)
+
+
+# scoringData = scoringData %>% mutate_all(to_logical_from_factor)
+# 
+# data = data %>% mutate(type = "analysis")
+# scoringData = scoringData %>% mutate(type = "scoring")
+# 
+# combinedData = bind_rows(data, scoringData)
+# 
+# 
+# 
+# combinedData = combinedData %>% mutate(host_response_rate = parse_number(host_response_rate))
+# combinedData = combinedData %>% mutate(host_acceptance_rate = parse_number(host_acceptance_rate))
+# combinedData = combinedData %>% mutate(calendar_updated = parse_number(calendar_updated))
+# 
+# 
+# # combinedData = combinedData %>% mutate(first_review = ymd(first_review))
+# # combinedData = combinedData %>% mutate(last_review = ymd(last_review))
+# # combinedData = combinedData %>% mutate(host_since = ymd(host_since))
+# 
+# 
+# 
+# combinedData = combinedData %>% mutate(across(where(is.character),as.factor))
+# combinedData = combinedData %>% mutate_all(to_factor_from_numeric)
+
+
+
+
+
+#data = data %>% mutate(host_response_rate = parse_number(host_response_rate))
+#data = data %>% mutate(host_acceptance_rate = parse_number(host_acceptance_rate))
+data = data %>% mutate(calendar_updated = parse_number(calendar_updated))
+
+data = data %>% mutate(across(where(is.character),as.factor))
+data$id = as.factor(data$id) 
+data = data %>% mutate_all(to_factor_from_numeric)
+
+
+#remove square_feet, weekly_price, monthly_price and security_deposit since they have too many missing values and will not be good predictors
+#remove name summary space  description neighborhood_overview notes  transit access interaction house_rules host_name host_since host_location host_about since too many unique values and will not be good predictors
+```
+
+#feature selection 1
+
+```{r}
+#drop columns with factor w/ levels greater than 1k
+dim(data)
+data = data %>% mutate_all(remove_columns)
+
+#drop columns with near zero variance
+dim(data)
+data = data %>% mutate_all(remove_nzv_columns)
+dim(data)
+
+#data$calendar_updated[is.na(data$calendar_updated)] <- median(data$calendar_updated, na.rm=TRUE)
+data$calendar_updated <- NULL
+
+# skim(data)
+# 
+# 
+# 
+# print(dfSummary(data, style = 'grid', graph.col = T), method = 'render')
+ 
+
+
+# #maybe after dummy variables
+# nearzv = tibble::rownames_to_column(filter(nearZeroVar(data[,],saveMetrics = T), nzv == TRUE), "VALUE")
+# nearzv = tibble::rownames_to_column(nearzv, "VALUE")
+# nearzv
+
+```
+
+
+
+
+# Bivariate Analysis
+# Identifying Predictors Continuous Variables
+```{r}
+#preparing the data with only continuous variables
+
+cont <- data %>% select_if(is.numeric) %>% names()
+cont_data <- data[c(cont)]
+
+#removing skewness
+proc =  preProcess(cont_data[,c(
+"price","host_listings_count","host_total_listings_count"                   
+,"accommodates","bathrooms","bedrooms"                                    
+,"beds","guests_included","extra_people"                                
+,"minimum_nights","maximum_nights","minimum_minimum_nights"                      
+,"maximum_minimum_nights","minimum_maximum_nights","maximum_maximum_nights"                      
+,"minimum_nights_avg_ntm","maximum_nights_avg_ntm","availability_30"                             
+,"availability_60","availability_90","availability_365"                            
+,"number_of_reviews","number_of_reviews_ltm","review_scores_rating"                        
+,"calculated_host_listings_count","calculated_host_listings_count_entire_homes","calculated_host_listings_count_private_rooms"
+,"reviews_per_month"     
+  )], method = 'BoxCox')
+
+cont_data2 = filter(cont_data)
+
+cor_df = as.data.frame(cor(cont_data2[-29]))
+
+#get the column index of variables with high correlation 
+x = remove_multi_cor(cor_df)
+high_cor = select(cor_df, c(x))
+#high_cor[, 9:12]
+
+
+# pairs = ggpairs(high_cor[,c(1,1:)])
+# pairs
+
+
+#removed due to correlation > 0.9
+data$host_total_listings_count <- NULL 
+data$minimum_minimum_nights <- NULL
+data$minimum_maximum_nights <- NULL
+data$maximum_nights_avg_ntm <- NULL
+data$minimum_nights_avg_ntm <- NULL
+data$availability_60 <- NULL
+
+cont <- data %>% select_if(is.numeric) %>% names()
+cont_data <- data[c(cont)]
+
+cont_data2 = filter(cont_data)
+set.seed(1000)
+split = createDataPartition(y = cont_data2$price, p = 0.75, list = F,groups = 10)
+train = cont_data2[split,][-23]
+test = cont_data2[-split,][-23]
+
+
+model1 = lm(price~., data = train)
+multi = car::vif(model1)
+# multi
+
+#removing variables with multi colinearity vif > 5
+data$calculated_host_listings_count <- NULL
+data$calculated_host_listings_count_private_rooms <- NULL
+data$calculated_host_listings_count_entire_homes = NULL
+data$availability_90 = NULL
+
+cont <- data %>% select_if(is.numeric) %>% names()
+cont_data <- data[c(cont)]
+
+
+cont_data2 = filter(cont_data)
+ggcorrplot(cor(cont_data2[-19]),
+           method = 'square',
+           type = 'lower',
+           show.diag = F,
+           colors = c('#e9a3c9', '#f7f7f7', '#a1d76a'))
+
+
+# skim(cont_data)
+# 
+# 
+# 
+# skim(cont_data)
+# str(cont_data)
+
+
+# pairs = ggpairs(cont_data[,c(1,7:10)])
+# pairs
+
+# ggpairs(cont_data)
+# ##take care of outliers
+# 
+# skim(cont_data)
+
+```
+
+#Identifying Predictors Categorical Variables
+```{r}
+cat = data %>% select_if(is.factor) %>%  names()
+
+cat_data = data[,c('price', cat)]
+cat_data = data[cat]
+
+#one-hot-encoding categorical variables
+ohe_feats = c('host_is_superhost','host_verifications','host_identity_verified','street','neighbourhood',
+'neighbourhood_cleansed','neighbourhood_group_cleansed','city','zipcode','smart_location',
+'is_location_exact','property_type','room_type','review_scores_accuracy','review_scores_cleanliness',
+'review_scores_checkin','review_scores_communication','review_scores_location','review_scores_value','instant_bookable',
+'cancellation_policy')
+
+dmy <- dummyVars(
+~ host_is_superhost+host_verifications+host_identity_verified+street+neighbourhood+
++neighbourhood_cleansed+neighbourhood_group_cleansed+city+zipcode+smart_location+
++is_location_exact+property_type+room_type+review_scores_accuracy+review_scores_cleanliness+
++review_scores_checkin+review_scores_communication+review_scores_location+review_scores_value+instant_bookable+
++cancellation_policy
+, data = cat_data)
+
+trsf <- as.data.frame(predict(dmy, newdata = cat_data))
+
+df_all_combined = cbind(cont_data, trsf)
+df_all_combined$pricena = as.factor(ifelse(df_all_combined$price < 0, 1, 0))
+
+dim(df_all_combined)
+data = df_all_combined %>% mutate_all(remove_nzv_columns)
+dim(data)
+
+
+# skim(df_all_combined)
+
+#do ggpairs to see and choose variables
+# pairs = ggpairs(cat_data[,c(1,14:22)], upper = list(continuous = "density", combi = "box_no_facet"),
+#                 lower = list(continuous = "points", combo = "dot_no_facet"))
+# pairs
+#c(1,2,4,8,12,14:22)
+#summary(cat_data)
+
+# dummy code all factor variables
+# cat_data = data[cat]
+# 
+# dim(cat_data)
+# 
+# dmy <- dummyVars(
+# "~host_is_superhost+host_verifications+host_identity_verified+street+neighbourhood+               
+# +neighbourhood_cleansed+neighbourhood_group_cleansed+city+zipcode+smart_location+              
+# +is_location_exact+property_type+room_type+review_scores_accuracy+review_scores_cleanliness+   
+# +review_scores_checkin+review_scores_communication+review_scores_location+review_scores_value+instant_bookable+            
+# +cancellation_policy"
+# , data = cat_data)
+# 
+# trsf <- data.frame(predict(dmy, newdata = cat_data))
+# 
+# cat_data = cat_data %>% bind_cols(trsf)
+# 
+# dim(cat_data)
+
+
+
+# data = data %>% mutate(type = "analysis")
+# scoringData = scoringData %>% mutate(type = "scoring")
+# 
+# cat_data = data[cat]
+# cat_data = cat_data %>% mutate(type2 = "cat")
+# cont_data = cont_data %>% mutate(type2 = "cont")
+# data = bind_cols(cont_data, cat_data)
+# 
+# dim(data)
+# data = data %>% mutate_all(remove_nzv_columns)
+# dim(data)
+
+#str(combinedData)
+
+#pairs = ggpairs(cat_data[,])
+
+```
+
+```{r}
+data1 = data
+
+set.seed(1031)
+split = createDataPartition(y = data1$price, p = 0.75, list = F,groups = 10)
+train = data1[split,]
+test = data1[-split,]
+
+
+#########
+
+trt = designTreatmentsZ(dframe = train,
+                        varlist = names(train)[-1])
+
+newvars = trt$scoreFrame[trt$scoreFrame$code%in% c('clean','lev'),'varName']
+
+train_input = prepare(treatmentplan = trt, 
+                      dframe = train,
+                      varRestriction = newvars)
+test_input = prepare(treatmentplan = trt, 
+                     dframe = test,
+                     varRestriction = newvars)
+head(train_input)
+
+#####
+
+set.seed(617)
+tune_nrounds = xgb.cv(data=as.matrix(train_input), 
+                      label = train$price,
+                      nrounds=250,
+                      nfold = 5,
+                      verbose = 0)
+
+####
+
+which.min(tune_nrounds$evaluation_log$test_rmse_mean)
+#60
+
+####
+
+#regression_tree xgboost
+
+#Basic from tutorial
+xgboost = xgboost(data=as.matrix(train_input),
+                  label = train$price,
+                  nrounds=60,
+                  verbose = 0)
+
+#RMSE evaluation
+xgboost_pred_train = predict(xgboost, 
+               newdata=as.matrix(train_input))
+xgboost_train_rmse = sqrt(mean((xgboost_pred_train - train$price)^2)); xgboost_train_rmse
+
+pred = predict(xgboost, 
+               newdata=as.matrix(test_input))
+xgboost_rmse = sqrt(mean((pred - test$price)^2)); xgboost_rmse
+
+
+#identifying important features for second interation
+model = xgb.dump(xgboost, with.stats=T)
+names = dimnames(data.matrix(train_input))[[2]]
+importance_matrix = xgb.importance(names, model = xgboost)
+xgb.plot.importance(importance_matrix[1:10,])
+# bathrooms accommodates bedrooms room_type_Entire_home_slash_apt neighbourhood_group_cleansed_Manhattan
+
+
+
+#Tuning
+xgboost2 = xgboost(data = as.matrix(train_input), 
+ label = train$price, 
+ verbose = 0,
+ eta = 0.1,
+ max_depth = 15, 
+ nround=60, 
+ subsample = 0.5,
+ colsample_bytree = 0.5
+)
+xgboost2$best_iteration
+
+#RMSE evaluation
+xgboost_pred_train2 = predict(xgboost2, 
+               newdata=as.matrix(train_input))
+xgboost_train_rmse2 = sqrt(mean((xgboost_pred_train2 - train$price)^2)); xgboost_train_rmse2
+
+pred = predict(xgboost2, 
+               newdata=as.matrix(test_input))
+xgboost_rmse2 = sqrt(mean((pred - test$price)^2)); xgboost_rmse2
+
+
+#identifying important features for second interation
+model = xgb.dump(xgboost2, with.stats=T)
+names = dimnames(data.matrix(train_input))[[2]]
+importance_matrix = xgb.importance(names, model = xgboost2)
+xgb.plot.importance(importance_matrix[1:10,])
+# bathrooms accommodates bedrooms room_type_Entire_home_slash_apt
+
+
+
+
+#Second iteration
+data2 = select(data1, c('price', 'bathrooms', 'accommodates', 'bedrooms', 'room_type.Entire home/apt', 'neighbourhood_group_cleansed.Manhattan'))
+
+set.seed(1031)
+split = createDataPartition(y = data2$price, p = 0.75, list = F,groups = 10)
+train = data2[split,]
+test = data2[-split,]
+
+
+#########
+
+trt = designTreatmentsZ(dframe = train,
+                        varlist = names(train)[-1])
+
+newvars = trt$scoreFrame[trt$scoreFrame$code%in% c('clean','lev'),'varName']
+
+train_input = prepare(treatmentplan = trt, 
+                      dframe = train,
+                      varRestriction = newvars)
+test_input = prepare(treatmentplan = trt, 
+                     dframe = test,
+                     varRestriction = newvars)
+head(train_input)
+
+#####
+
+set.seed(617)
+tune_nrounds = xgb.cv(data=as.matrix(train_input), 
+                      label = train$price,
+                      nrounds=250,
+                      nfold = 5,
+                      verbose = 0)
+
+####
+
+which.min(tune_nrounds$evaluation_log$test_rmse_mean)
+#17
+
+####
+
+#regression_tree xgboost
+
+#Basic from tutorial
+xgboost3 = xgboost(data=as.matrix(train_input),
+                  label = train$price,
+                  nrounds=17,
+                  verbose = 0)
+
+#RMSE evaluation
+xgboost_pred_train3 = predict(xgboost3, 
+               newdata=as.matrix(train_input))
+xgboost_train_rmse3 = sqrt(mean((xgboost_pred_train3 - train$price)^2)); xgboost_train_rmse3
+
+pred = predict(xgboost3, 
+               newdata=as.matrix(test_input))
+xgboost_rmse3 = sqrt(mean((pred - test$price)^2)); xgboost_rmse3
+
+
+#Tuning
+xgboost4 = xgboost(data = as.matrix(train_input), 
+ label = train$price, 
+ verbose = 0,
+ eta = 0.1,
+ max_depth = 15, 
+ nround=17, 
+ subsample = 0.5,
+ colsample_bytree = 0.5
+)
+xgboost4$best_iteration
+
+#RMSE evaluation
+xgboost_pred_train4 = predict(xgboost4, 
+               newdata=as.matrix(train_input))
+xgboost_train_rmse4 = sqrt(mean((xgboost_pred_train4 - train$price)^2)); xgboost_train_rmse4
+
+pred = predict(xgboost4, 
+               newdata=as.matrix(test_input))
+xgboost_rmse4 = sqrt(mean((pred - test$price)^2)); xgboost_rmse4
+
+```
+```{r}
+
+data.frame(
+  id = 1:4,
+  model = c('xgboost','tuned-xbgoost', 'xgboost-feature','tuned-xgboost-feature'),
+  rmse_train = c(xgboost_train_rmse, xgboost_train_rmse2, xgboost_train_rmse3, xgboost_train_rmse4),
+  rmse = c(xgboost_rmse, xgboost_rmse2, xgboost_rmse3, xgboost_rmse4))%>%
+  mutate(rmse_train = round(rmse_train,3),
+         rmse = round(rmse,3))%>%
+  rename('train RMSE' = rmse_train, 'test RMSE' = rmse)
+
+```
+
+# Run the best performing regression model with the whole data
+```{r}
+train = data
+test = scoringData
+
+
+
+
+#########
+
+trt = designTreatmentsZ(dframe = train,
+                        varlist = names(train)[-1])
+
+newvars = trt$scoreFrame[trt$scoreFrame$code%in% c('clean','lev'),'varName']
+
+train_input = prepare(treatmentplan = trt, 
+                      dframe = train,
+                      varRestriction = newvars)
+# test_input = prepare(treatmentplan = trt, 
+#                      dframe = test,
+#                      varRestriction = newvars)
+# head(train_input)
+
+#####
+
+set.seed(617)
+tune_nrounds = xgb.cv(data=as.matrix(train_input), 
+                      label = train$price,
+                      nrounds=250,
+                      nfold = 5,
+                      verbose = 0)
+
+####
+
+which.min(tune_nrounds$evaluation_log$test_rmse_mean)
+#248
+
+####
+
+#regression_tree xgboost
+
+#Basic from tutorial
+xgboost = xgboost(data=as.matrix(train_input),
+                  label = train$price,
+                  nrounds=248,
+                  verbose = 0)
+
+#RMSE evaluation
+pred = predict(xgboost, 
+               newdata=as.matrix(train_input))
+
+```
+# better feature selection
+# tune the regression model
+# random forest
+
+```{r}
+submissionFile = data.frame(id = scoringData$id, price = pred)
+write.csv(submissionFile, 'submission.csv',row.names = F)
+```
+
+# Make prediction and make submission
+
+
+
+
+
+
+
+
+
+# Feature Selection
+```{r}
+#analysis = filter(combinedData, type == 'analysis')
+#scoring = filter(combinedData, type == 'scoring')
+
+#using a regression tree 
+# room_type+accommodates+zipcode+bathrooms+beds 
+# +bedrooms+neighbourhood_cleansed+guests_included+neighbourhood+neighbourhood_group_cleansed 
+# +street+smart_location+city+property_type+host_verifications 
+# +cancellation_policy
+tree = rpart(price~., data=data, method = 'anova')
+tree$variable.importance
+
+
+# #Best subset selection (bedrooms+beds+guest_included+extra_people+maximum_nights+maximum_nights_avg_ntm+
+# #availability_365 +review_scores_rating +calculated_host_listings_count_private_rooms+calculated_host_listings_count_shared_rooms)
+# subsets = regsubsets(price~.,data=analysis, nvmax=11, really.big=T)
+# summary(subsets)
+
+
+#Lasso
+# zipcode                                                                                    
+# +smart_location
+# +smart_location.New.York..NY.1                                                                                   
+# +smart_location.Queens..NY    
+# +is_location_exact.t          
+# +room_type                                                                                                       
+# +host_is_superhost.f                                                                                           
+# +host_verifications...email....phone....offline_government_id....selfie....government_id....identity_manual..   
+# +street.New.York..NY..United.States.1                                                                          
+# +street.Queens..NY..United.States                                                                              
+# +neighbourhood_cleansed.Harlem                                                                              
+# +neighbourhood_group_cleansed.Manhattan                                                                      
+# +neighbourhood_group_cleansed.Queens                                                                          
+# +property_type.House                                                                                         
+# +room_type.Entire.home.apt                                                                                      
+# +review_scores_cleanliness.8                                                                                        
+# +review_scores_cleanliness.10                                                                                        
+# +review_scores_communication.9                                                                                         
+# +review_scores_location.9                                                                                           
+# +review_scores_value.10   
+
+# data = 
+#   bind_rows(filter(data, type1...19 == 'analysis'),
+#             filter(data, type1...41 == 'analysis'))
+# 
+# x = model.matrix(price~.,data=data)
+# y = data$price
+# 
+# set.seed(617)
+# cv_lasso = cv.glmnet(x = x,
+#                      y = y,
+#                      alpha = 1,
+#                      type.measure = 'mse')
+# coef(cv_lasso)
+
+```
+
+
+
+#performing regression
+```{r}
+set.seed(1031)
+data = 
+  bind_rows(filter(data, type1...19 == 'analysis'),
+            filter(data, type1...42 == 'analysis'))
+
+split = createDataPartition(y = data$price, p = 0.75, list = F,groups = 10)
+train = data[split,]
+test = data[-split,]
+
+
+#regression_tree using variables from tree feature selection
+regression_tree = rpart(price~
+room_type+accommodates+zipcode+bathrooms+beds 
++bedrooms+neighbourhood_cleansed+guests_included+neighbourhood+neighbourhood_group_cleansed 
++street+smart_location+city+property_type+host_verifications 
++cancellation_policy, 
+data = train, method = 'anova')
+
+reg_train_tree_pred = predict(regression_tree)
+reg_tree_train_rmse = sqrt(mean((reg_train_tree_pred - train$price)^2)); reg_tree_train_rmse
+pred = predict(regression_tree, newdata = test)
+reg_tree_test_rmse = sqrt(mean((pred - test$price)^2)); reg_tree_test_rmse
+
+
+
+# #regression_tree using variables from lasso
+# regression_tree2 = rpart(price~
+# zipcode
+# +smart_location                                                                               
+# +smart_location.New.York..NY.1                                                                                   
+# +smart_location.Queens..NY    
+# +is_location_exact.t          
+# +room_type                                                                                                       
+# +host_is_superhost.f                                                                                           
+# +host_verifications...email....phone....offline_government_id....selfie....government_id....identity_manual..   
+# +street.New.York..NY..United.States.1                                                                          
+# +street.Queens..NY..United.States                                                                              
+# +neighbourhood_cleansed.Harlem                                                                              
+# +neighbourhood_group_cleansed.Manhattan                                                                      
+# +neighbourhood_group_cleansed.Queens                                                                          
+# +property_type.House                                                                                         
+# +room_type.Entire.home.apt                                                                                      
+# +review_scores_cleanliness.8                                                                                        
+# +review_scores_cleanliness.10                                                                                        
+# +review_scores_communication.9                                                                                         
+# +review_scores_location.9                                                                                           
+# +review_scores_value.10, 
+#                          data = train, method = 'anova')
+# 
+# reg_train_tree_pred2 = predict(regression_tree2)
+# reg_tree_train_rmse2 = sqrt(mean((reg_train_tree_pred2 - train$price)^2)); reg_tree_train_rmse2
+# pred = predict(regression_tree2, newdata = test)
+# reg_tree_test_rmse2 = sqrt(mean((pred - test$price)^2)); reg_tree_test_rmse2
+
+
+#regression_tree all
+regression_tree3 = rpart(price~., 
+                         data = train, method = 'anova')
+
+reg_train_tree_pred3 = predict(regression_tree3)
+reg_tree_train_rmse3 = sqrt(mean((reg_train_tree_pred3 - train$price)^2)); reg_tree_train_rmse3
+pred = predict(regression_tree3, newdata = test)
+reg_tree_test_rmse3 = sqrt(mean((pred - test$price)^2)); reg_tree_test_rmse3
+
+
+
+#boost gbm from tree
+set.seed(617)
+boost = gbm(price~
+room_type+accommodates+zipcode+bathrooms+beds 
++bedrooms+neighbourhood_cleansed+guests_included+neighbourhood+neighbourhood_group_cleansed 
++street+smart_location+city+property_type+host_verifications 
++cancellation_policy,
+            data=train,
+            distribution="gaussian",
+            n.trees = 500,
+            interaction.depth = 2,
+            shrinkage = 0.01)
+gbm_train_pred = predict(boost, n.trees=500)
+gbm_train_rmse = sqrt(mean((gbm_train_pred - train$price)^2)); gbm_train_rmse
+
+pred = predict(boost, newdata = test, n.trees = 500)
+rmse_boost = sqrt(mean((pred - test$price)^2)); rmse_boost
+
+
+# #boost gbm from lasso
+# set.seed(617)
+# boost2 = gbm(price~
+# zipcode
+# +smart_location                                                                               
+# +smart_location.New.York..NY.1                                                                                   
+# +smart_location.Queens..NY    
+# +is_location_exact.t          
+# +room_type                                                                                                       
+# +host_is_superhost.f                                                                                           
+# +host_verifications...email....phone....offline_government_id....selfie....government_id....identity_manual..   
+# +street.New.York..NY..United.States.1                                                                          
+# +street.Queens..NY..United.States                                                                              
+# +neighbourhood_cleansed.Harlem                                                                              
+# +neighbourhood_group_cleansed.Manhattan                                                                      
+# +neighbourhood_group_cleansed.Queens                                                                          
+# +property_type.House                                                                                         
+# +room_type.Entire.home.apt                                                                                      
+# +review_scores_cleanliness.8                                                                                        
+# +review_scores_cleanliness.10                                                                                        
+# +review_scores_communication.9                                                                                         
+# +review_scores_location.9                                                                                           
+# +review_scores_value.10,
+#             data=train,
+#             distribution="gaussian",
+#             n.trees = 500,
+#             interaction.depth = 2,
+#             shrinkage = 0.01)
+# gbm_train_pred2 = predict(boost2, n.trees=500)
+# gbm_train_rmse2 = sqrt(mean((gbm_train_pred2 - train$price)^2)); gbm_train_rmse2
+# 
+# pred = predict(boost2, newdata = test, n.trees = 500)
+# rmse_boost2 = sqrt(mean((pred - test$price)^2)); rmse_boost2
+
+
+#boost gbm all
+set.seed(617)
+boost3 = gbm(price~.,
+            data=train,
+            distribution="gaussian",
+            n.trees = 500,
+            interaction.depth = 2,
+            shrinkage = 0.01)
+gbm_train_pred3 = predict(boost3, n.trees=500)
+gbm_train_rmse3 = sqrt(mean((gbm_train_pred3 - train$price)^2)); gbm_train_rmse3
+
+pred = predict(boost3, newdata = test, n.trees = 500)
+rmse_boost3 = sqrt(mean((pred - test$price)^2)); rmse_boost3
+
+
+
+
+
+
+
+
+
+#tuned gbm tree
+set.seed(1031)
+trControl = trainControl(method="cv",number=5)
+tuneGrid = expand.grid(n.trees = 500,
+                       interaction.depth = c(1,2,3),
+                       shrinkage = (1:100)*0.001,
+                       n.minobsinnode=c(5,10,15))
+garbage = capture.output(cvModel <- train(price~
+room_type+accommodates+zipcode+bathrooms+beds 
++bedrooms+neighbourhood_cleansed+guests_included+neighbourhood+neighbourhood_group_cleansed 
++street+smart_location+city+property_type+host_verifications 
++cancellation_policy,
+                                          data=train,
+                                          method="gbm",
+                                          trControl=trControl,
+                                          tuneGrid=tuneGrid))
+set.seed(1031)
+cvboost = gbm(price~
+room_type+accommodates+zipcode+bathrooms+beds 
++bedrooms+neighbourhood_cleansed+guests_included+neighbourhood+neighbourhood_group_cleansed 
++street+smart_location+city+property_type+host_verifications 
++cancellation_policy,
+              data=train,
+              distribution="gaussian",
+              n.trees=500,
+              interaction.depth=cvModel$bestTune$interaction.depth,
+              shrinkage=cvModel$bestTune$shrinkage,
+              n.minobsinnode = cvModel$bestTune$n.minobsinnode)
+
+tuned_gbm_pred_train = predict(cvboost, n.trees=500)
+tuned_gbm_train_rmse = sqrt(mean((tuned_gbm_pred_train - train$price)^2)); tuned_gbm_train_rmse
+
+pred = predict(cvboost, newdata = test, n.trees = 500)
+tuned_gbm_rmse = sqrt(mean((pred - test$price)^2)); tuned_gbm_rmse
+
+
+
+# #tuned gbm lasso
+# set.seed(1031)
+# trControl = trainControl(method="cv",number=5)
+# tuneGrid = expand.grid(n.trees = 500,
+#                        interaction.depth = c(1,2,3),
+#                        shrinkage = (1:100)*0.001,
+#                        n.minobsinnode=c(5,10,15))
+# garbage = capture.output(cvModel <- train(price~
+# zipcode
+# +smart_location                                                                               
+# +smart_location.New.York..NY.1                                                                                   
+# +smart_location.Queens..NY    
+# +is_location_exact.t          
+# +room_type                                                                                                       
+# +host_is_superhost.f                                                                                           
+# +host_verifications...email....phone....offline_government_id....selfie....government_id....identity_manual..   
+# +street.New.York..NY..United.States.1                                                                          
+# +street.Queens..NY..United.States                                                                              
+# +neighbourhood_cleansed.Harlem                                                                              
+# +neighbourhood_group_cleansed.Manhattan                                                                      
+# +neighbourhood_group_cleansed.Queens                                                                          
+# +property_type.House                                                                                         
+# +room_type.Entire.home.apt                                                                                      
+# +review_scores_cleanliness.8                                                                                        
+# +review_scores_cleanliness.10                                                                                        
+# +review_scores_communication.9                                                                                         
+# +review_scores_location.9                                                                                           
+# +review_scores_value.10,
+#                                           data=train,
+#                                           method="gbm",
+#                                           trControl=trControl,
+#                                           tuneGrid=tuneGrid))
+# set.seed(1031)
+# cvboost = gbm(price~
+# zipcode
+# +smart_location                                                                               
+# +smart_location.New.York..NY.1                                                                                   
+# +smart_location.Queens..NY    
+# +is_location_exact.t          
+# +room_type                                                                                                       
+# +host_is_superhost.f                                                                                           
+# +host_verifications...email....phone....offline_government_id....selfie....government_id....identity_manual..   
+# +street.New.York..NY..United.States.1                                                                          
+# +street.Queens..NY..United.States                                                                              
+# +neighbourhood_cleansed.Harlem                                                                              
+# +neighbourhood_group_cleansed.Manhattan                                                                      
+# +neighbourhood_group_cleansed.Queens                                                                          
+# +property_type.House                                                                                         
+# +room_type.Entire.home.apt                                                                                      
+# +review_scores_cleanliness.8                                                                                        
+# +review_scores_cleanliness.10                                                                                        
+# +review_scores_communication.9                                                                                         
+# +review_scores_location.9                                                                                           
+# +review_scores_value.10,
+#               data=train,
+#               distribution="gaussian",
+#               n.trees=500,
+#               interaction.depth=cvModel$bestTune$interaction.depth,
+#               shrinkage=cvModel$bestTune$shrinkage,
+#               n.minobsinnode = cvModel$bestTune$n.minobsinnode)
+# 
+# tuned_gbm_pred_train2 = predict(cvboost, n.trees=500)
+# tuned_gbm_train_rmse2 = sqrt(mean((tuned_gbm_pred_train2 - train$price)^2)); tuned_gbm_train_rmse2
+# 
+# pred = predict(cvboost, newdata = test, n.trees = 500)
+# tuned_gbm_rmse2 = sqrt(mean((pred - test$price)^2)); tuned_gbm_rmse2
+# 
+
+
+
+#tuned gbm all
+set.seed(1031)
+trControl = trainControl(method="cv",number=5)
+tuneGrid = expand.grid(n.trees = 500,
+                       interaction.depth = c(1,2,3),
+                       shrinkage = (1:100)*0.001,
+                       n.minobsinnode=c(5,10,15))
+garbage = capture.output(cvModel <- train(price~.,
+                                          data=train,
+                                          method="gbm",
+                                          trControl=trControl,
+                                          tuneGrid=tuneGrid))
+set.seed(1031)
+cvboost = gbm(price~.,
+              data=train,
+              distribution="gaussian",
+              n.trees=500,
+              interaction.depth=cvModel$bestTune$interaction.depth,
+              shrinkage=cvModel$bestTune$shrinkage,
+              n.minobsinnode = cvModel$bestTune$n.minobsinnode)
+
+tuned_gbm_pred_train3 = predict(cvboost, n.trees=500)
+tuned_gbm_train_rmse3 = sqrt(mean((tuned_gbm_pred_train3 - train$price)^2)); tuned_gbm_train_rmse3
+
+pred = predict(cvboost, newdata = test, n.trees = 500)
+tuned_gbm_rmse3 = sqrt(mean((pred - test$price)^2)); tuned_gbm_rmse3
+
+
+
+```
+
+
+
+# xgboost
+```{r}
+trt = designTreatmentsZ(dframe = train,
+                        varlist = names(train)[-23])
+
+newvars = trt$scoreFrame[trt$scoreFrame$code%in% c('clean','lev'),'varName']
+
+train_input = prepare(treatmentplan = trt, 
+                      dframe = train,
+                      varRestriction = newvars)
+test_input = prepare(treatmentplan = trt, 
+                     dframe = test,
+                     varRestriction = newvars)
+head(train_input)
+
+#####
+
+set.seed(617)
+tune_nrounds = xgb.cv(data=as.matrix(train_input), 
+                      label = train$price,
+                      nrounds=250,
+                      nfold = 5,
+                      verbose = 0)
+
+####
+
+which.min(tune_nrounds$evaluation_log$test_rmse_mean)
+
+####
+
+#regression_tree xgboost
+xgboost = xgboost(data=as.matrix(train_input),
+                  label = train$price,
+                  nrounds=126,
+                  verbose = 0,
+                  early_stopping_rounds = 100)
+xgboost$best_iteration
+
+
+xgboost_pred_train = predict(xgboost, 
+               newdata=as.matrix(train_input))
+xgboost_train_rmse = sqrt(mean((xgboost_pred_train - train$price)^2)); xgboost_train_rmse
+
+pred = predict(xgboost, 
+               newdata=as.matrix(test_input))
+xgboost_rmse = sqrt(mean((pred - test$price)^2)); xgboost_rmse
+
+```
+
+
+# Summarizing Results
+```{r}
+
+# data.frame(
+#   id = 1:3,
+#   model = c('tree','boost - gbm', 'xgboost'),
+#   rmse_train = c(reg_tree_train_rmse, gbm_train_rmse, xgboost_train_rmse),
+#   rmse = c(reg_tree_test_rmse, rmse_boost, xgboost_rmse))%>%
+#   mutate(rmse_train = round(rmse_train,3),
+#          rmse = round(rmse,3))%>%
+#   rename('train RMSE' = rmse_train, 'test RMSE' = rmse)
+
+
+
+data.frame(
+  id = 1:6,
+  model = c('tree','tree2', 'boost-tree','boost2', 'boost-all', 'xgboost'),
+  rmse_train = c(reg_tree_train_rmse, reg_tree_train_rmse2, gbm_train_rmse, gbm_train_rmse2, gbm_train_rmse3, xgboost_train_rmse),
+  rmse = c(reg_tree_test_rmse, reg_tree_test_rmse2, rmse_boost, rmse_boost2, rmse_boost3, xgboost_rmse))%>%
+  mutate(rmse_train = round(rmse_train,3),
+         rmse = round(rmse,3))%>%
+  rename('train RMSE' = rmse_train, 'test RMSE' = rmse)
+```
+
+# Run the best performing regression model with the whole data
+```{r}
+train = analysis
+test = scoring
+
+
+trt = designTreatmentsZ(dframe = train,
+                        varlist = names(train)[-23])
+
+newvars = trt$scoreFrame[trt$scoreFrame$code%in% c('clean','lev'),'varName']
+
+train_input = prepare(treatmentplan = trt, 
+                      dframe = train,
+                      varRestriction = newvars)
+test_input = prepare(treatmentplan = trt, 
+                     dframe = test,
+                     varRestriction = newvars)
+#head(train_input)
+
+#####
+
+set.seed(617)
+tune_nrounds = xgb.cv(data=as.matrix(train_input), 
+                      label = train$price,
+                      nrounds=250,
+                      nfold = 5,
+                      verbose = 0)
+
+####
+
+which.min(tune_nrounds$evaluation_log$test_rmse_mean)
+
+####
+
+#regression_tree xgboost
+xgboost = xgboost(data=as.matrix(train_input),
+                  label = train$price,
+                  nrounds=117,
+                  verbose = 0,
+                  early_stopping_rounds = 100)
+xgboost$best_iteration
+
+
+xgboost_pred_train = predict(xgboost, 
+               newdata=as.matrix(train_input))
+xgboost_train_rmse = sqrt(mean((xgboost_pred_train - train$price)^2)); xgboost_train_rmse
+
+pred = predict(xgboost, 
+               newdata=as.matrix(test_input))
+xgboost_rmse = sqrt(mean((pred - test$price)^2)); xgboost_rmse
+
+
+
+```
+# better feature selection
+# tune the regression model
+# random forest
+
+```{r}
+submissionFile = data.frame(id = scoringData$id, price = pred)
+write.csv(submissionFile, 'submission.csv',row.names = F)
+```
+
+# Make prediction and make submission
