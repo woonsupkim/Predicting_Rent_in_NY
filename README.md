@@ -1,3 +1,3 @@
 # Predicting_Rent_in_NY
 
-[embed]http://example.com/file.pdf[/embed]
+![1]https://github.com/woonsupkim/Predicting_Rent_in_NY/blob/main/PPT/KagglePresentation.png
